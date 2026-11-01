@@ -1,0 +1,17 @@
+version: 1
+byteBudget: 50000
+roots:
+  - name: repo
+    path: ..
+sources:
+  - root: repo
+    path: src/main/java/dev/hrishikesh/rer/context/ContextPacker.java
+  - root: repo
+    path: pom.xml
+  - root: repo
+    path: docs/project.md
+exclusions:
+  - root: repo
+    path: target
+  - root: repo
+    path: .env

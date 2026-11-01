@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+RER_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ ! -f "$RER_HOME/target/rer.jar" ]; then
+  echo "Build rer first: cd \"$RER_HOME\" && mvn -q verify" >&2
+  exit 3
+fi
+exec java -jar "$RER_HOME/target/rer.jar" "$@"

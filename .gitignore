@@ -25,3 +25,8 @@ replay_pid*
 
 # Temporary files
 /tmp/
+
+# Build and local IDE state
+/target/
+/build/
+.idea/

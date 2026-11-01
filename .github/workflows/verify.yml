@@ -1,0 +1,22 @@
+name: Verify
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -q verify
+      - run: ./rer context --manifest examples/context.yaml --output build/context
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rer
+          path: |
+            target/rer.jar
+            rer
