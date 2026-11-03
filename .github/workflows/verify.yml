@@ -13,6 +13,7 @@ jobs:
           java-version: '21'
           cache: maven
       - run: mvn -q verify
+      - run: sh scripts/test-installer.sh
       - run: ./rer context --manifest examples/context.yaml --output build/context
       - uses: actions/upload-artifact@v4
         with:

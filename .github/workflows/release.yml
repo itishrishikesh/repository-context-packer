@@ -1,0 +1,72 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            platform: linux-x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-15-intel
+            platform: darwin-x86_64
+          - runner: macos-15
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -q verify
+      - name: Check tag matches project version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          test "$GITHUB_REF_NAME" = "v$version"
+      - run: sh scripts/test-installer.sh
+      - run: sh scripts/package.sh
+      - name: Smoke test archive and installer
+        shell: bash
+        run: |
+          archive=$(find build/distributions -name '*.tar.gz' -print -quit)
+          mkdir -p build/smoke
+          tar -xzf "$archive" -C build/smoke
+          build/smoke/*/rer --version
+          build/smoke/*/rer inspect --repo . --json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rer-${{ matrix.platform }}
+          path: build/distributions/*.tar.gz
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rer-*
+          merge-multiple: true
+          path: release
+      - name: Publish verified archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          cd release
+          sha256sum *.tar.gz > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" *.tar.gz SHA256SUMS --verify-tag --title "rer $GITHUB_REF_NAME" --notes 'Local-first agent context regression checks for Claude Code and Codex. Includes private Java runtimes for Linux and macOS on x86_64 and arm64. Download the matching archive or use the single-command installer in the README. Comparisons run real agents using your existing authentication and consume your usage allowance.'

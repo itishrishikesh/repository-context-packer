@@ -1,122 +1,159 @@
-# Repository Context Packer
+# rer — Agent Context Regression Checks
 
-`rer` packages explicitly selected files from Git working trees into `context.md` and `manifest.json`. It records SHA-256 hashes, source line references, aliases, and omission decisions, and applies a budget to unique source bytes.
+Find out whether a change to your Claude Code or Codex setup earns its cost. `rer` inspects repository guidance, saves engineering tasks locally, and compares baseline and candidate configurations against the same committed task code.
 
-Requires **JDK 21 or newer**, **Maven 3.9+**, and **Git** on `PATH`. The executable launcher uses a POSIX shell. On other platforms use the JAR directly. CI runs the same build on JDK 21 and Linux.
+**No YAML, source-file selection, or committed evaluation files required.** Cases, snapshots, traces, and reports live outside your repository. Both **Claude Code and Codex** are supported in the first release.
 
-## Build and try this repository
+## Install on Linux or macOS
+
+Run this single command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/itishrishikesh/repository-context-packer/main/scripts/install.sh | sh
+```
+
+The installer downloads the latest [GitHub Release](https://github.com/itishrishikesh/repository-context-packer/releases/latest), selects your OS/architecture, and verifies its SHA-256 checksum. Each archive bundles a Java runtime: **you do not need Java, Maven, or sudo**.
+
+Supported downloads: Linux x86_64 and ARM64, macOS Intel and Apple Silicon. Linux requires glibc (not Alpine/musl); x86_64 builds use Ubuntu 22.04 and ARM64 builds use Ubuntu 24.04. macOS builds use macOS 15. Older systems are not verified.
+
+The command installs to `~/.local/bin/rer`. If that directory is not on your `PATH`, the installer prints the line to add to your shell profile. You can immediately run `~/.local/bin/rer --help` either way. The installer does not edit your shell configuration.
+
+```sh
+rer --version
+rer --help
+```
+
+To install a particular published version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/itishrishikesh/repository-context-packer/main/scripts/install.sh | RER_VERSION=1.1.0 sh
+```
+
+Set `RER_INSTALL_DIR` and `RER_BIN_DIR` on `sh` to customize installation. Run the command again to install a newer release. Reinstalling the same version requires removing its existing version directory first; previous versions remain available until you remove them. For a manual install, download the matching release archive and `SHA256SUMS`, verify the archive, extract it, and run the extracted `rer` launcher. Keep its `runtime/` and `lib/` directories beside it.
+
+## First useful command
+
+From a Git repository:
+
+```sh
+rer inspect
+```
+
+This requires Git, but does not require an agent installation, login, or model call. It lists supported Git-visible configuration, SHA-256 identities in JSON output, exact duplicate content, broken relative Markdown links, and unusually large instruction files. Duplicate content can serve different scopes; findings are suggestions, not deletion instructions.
+
+```sh
+rer inspect --json
+rer inspect --repo /path/to/project
+```
+
+The inspection covers `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, supported `.claude`/`.codex` settings, skills, rules, agents, commands, and hook support files. It uses Git-visible tracked and non-ignored untracked files. Configuration must be UTF-8, at most 1 MiB per file and 16 MiB total. Symlinked configuration paths are rejected.
+
+This is a repository inventory, not a reconstruction of the agent's actual prompt. It excludes personal/managed settings, ignored local configuration, external skill directories, runtime schemas, and loaded tool responses. **Bytes are not tokens.**
+
+## Compare a setup change, step by step
+
+### 1. Prepare a task with committed starting code
+
+Pick a small engineering task with a meaningful verification command. For example, an exporter escaping bug with a regression test that fails before the fix. The starting code and test must already be committed in your project.
+
+Save the task locally; the inline prompt avoids creating any repository file:
+
+```sh
+rer case add exporter-fix \
+  --prompt 'Fix the exporter escaping bug demonstrated by ExporterEscapingTest.' \
+  --check 'mvn -q verify'
+```
+
+Alternatively, use `--prompt-file /path/to/task.md`. The file is read once and its text is saved with the case. The case stores your current committed `HEAD` revision and explicit check command. **Uncommitted task-code edits are not captured.** No agent runs at this step.
+
+### 2. Change your agent configuration
+
+Edit a repository instruction, skill, rule, or supported configuration file. You do not have to commit the change. Candidate configuration is captured from your current working tree, including supported non-ignored untracked files and deletions.
+
+Preview the comparison for free:
+
+```sh
+rer compare --base HEAD --case exporter-fix --dry-run
+```
+
+`--base` supplies baseline configuration. Use `HEAD` for uncommitted changes or a previous commit/branch when the configuration change is already committed. Task code always comes from the revision saved with the case, regardless of the baseline revision.
+
+### 3. Run both agents
+
+Install and sign in to [Codex CLI](https://learn.chatgpt.com/docs/cli) and [Claude Code](https://code.claude.com/docs/en/overview) first. `rer` uses their existing authentication; it does not install the agents or copy credentials.
+
+Choose model identifiers available to your accounts. Replace the placeholders below with full identifiers; aliases can change over time:
+
+```sh
+rer compare --base HEAD --case exporter-fix \
+  --agent both \
+  --codex-model YOUR_CODEX_MODEL \
+  --claude-model YOUR_CLAUDE_MODEL
+```
+
+`both` is the default. To run one provider, use `--agent codex --codex-model YOUR_CODEX_MODEL` or `--agent claude --claude-model YOUR_CLAUDE_MODEL`.
+
+**A comparison runs real agents and consumes your provider usage.** One repetition with both agents starts four agent processes: baseline and candidate for each. Use `--repeat 3` for repeated pairs; variant order alternates on each repetition. `--timeout 600` sets the per-process time limit for agents and checks; allowed range is 1–3600 seconds.
+
+For each run, `rer`:
+
+1. Creates a disposable local clone at the saved task revision, without changing your checkout or Git worktree metadata.
+2. Replaces discovered configuration with the captured baseline or candidate snapshot, preserving executable support files. The source fixture stays the same for both variants.
+3. Runs your verification command before the agent; reports when the check already passed, since it may not establish task completion.
+4. Runs the chosen agent with the same requested model in both variants.
+5. Runs your verification command again after successful agent completion, and saves traces, check output, configuration snapshots, and change evidence.
+6. Removes the disposable clone and prints the local Markdown report path.
+
+The check runs through `/bin/sh` using your account permissions. Use a check you trust. Codex uses its `workspace-write` sandbox with interactive approvals disabled; Claude uses `acceptEdits` and its existing permission rules. `rer` never passes a permission-bypass flag. Commands requiring additional approval can fail in non-interactive runs. Disposable clones isolate repository edits, **not the operating system or external services**.
+
+Dependency installation is not automatic. Your check can bootstrap disposable dependencies if needed, but it must leave tracked files unchanged. Ignored build products may be retained between the precheck and agent. Submodule fixtures are rejected; Git LFS files are not hydrated. Personal settings, hooks, MCP data, and cache state are not frozen; fresh clone paths can affect native trust and configuration discovery. Use an external isolated runner for untrusted fixtures.
+
+### 4. Read the result
+
+The report shows baseline/candidate check results, reported input/output and cache tokens, agent duration, per-agent input deltas, and paired check regressions. JSON additionally records requested models, agent versions, observed models where exposed, tool observations, configuration hashes, and precheck results.
+
+`PASS` means the agent completed successfully and your check exited 0. A passing generic build does not prove the requested change was made; use a targeted check. Agent self-reports and exit code alone are not accepted as success. Missing telemetry is `unknown`, not zero.
+
+Compare each agent against its own baseline. Codex input usage includes cached input; Claude input usage is uncached and its cache categories are separate. These are cumulative run usage fields, not context-window occupancy or a subscription charge. Tool events provide partial observations, not proof of skill activation or why behavior changed. Repeated paired runs and meaningful checks are necessary before drawing conclusions about efficiency.
+
+Reports are advisory: token increases alone do not fail a run. Abrupt termination or a process crash can leave a `rer-replay-*` directory in the system temporary directory; remove it after confirming no run is active. Exit codes are `0` when every agent/check succeeds, `1` when a verification check fails, `2` for invalid arguments, `3` for setup/process/trace errors, and `130` for an interrupted Java thread. Timeouts and malformed/missing terminal traces are errors. Partial reports are retained when completed runs exist.
+
+## Where does data go?
+
+```sh
+rer data
+rer case list
+rer case remove exporter-fix
+```
+
+Default data roots:
+
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/rer`
+- macOS: `~/Library/Application Support/rer` (or `$XDG_DATA_HOME/rer` when set)
+- Override either platform with `RER_DATA_HOME=/absolute/path`.
+
+Each checkout has a separate directory under `repositories/<path-hash>/`, with `cases/` and `reports/`. Its directory is restricted to your user. Moving a checkout changes this identity. `rer` refuses a data directory inside the repository.
+
+Removing a case leaves its historical reports. To remove reports, delete the selected report directory under the path printed by `rer data`. To remove all rer data for a checkout, delete that checkout's printed data directory. Local snapshots and traces can contain prompts, source code, and configuration values; no report is uploaded by `rer`.
+
+To uninstall the application, remove `~/.local/bin/rer` and the desired version directories under `~/.local/share/rer/versions`. Evaluation data is separate and remains until you delete it.
+
+## Build and develop
+
+Source builds require **JDK 21+**, **Maven 3.9+**, Git, and a POSIX system:
 
 ```sh
 mvn -q verify
-./rer context --manifest examples/context.yaml --output build/context
+./rer --help
+./rer inspect
+sh scripts/test-installer.sh
+sh scripts/package.sh
 ```
 
-The build creates the dependency-inclusive `target/rer.jar`. You can also run:
+Java integration tests use temporary real Git repositories and simulated Claude/Codex executables, without paid model calls. They cover the paired comparison path, external storage, checkout preservation, trace parsing, errors, timeouts, and configuration boundaries. Installer fixtures cover all four OS/architecture combinations and checksum rejection. Release builds run tests and smoke-test the bundled launcher on each target runner. Compatibility with future CLI trace schemas requires ongoing verification; raw traces are retained for diagnosis.
 
-```sh
-java -jar target/rer.jar context --manifest examples/context.yaml --output build/context
-```
+To publish a release after changes are committed and pushed, tag the matching POM version and push the tag, for example `git tag v1.1.0` followed by `git push origin v1.1.0`. The release workflow tests and packages all four targets before publishing archives and `SHA256SUMS`. A manual workflow dispatch builds downloadable Actions artifacts without publishing a release.
 
-Inspect `build/context/context.md` and `build/context/manifest.json`. To verify repeatability:
+## Existing context export
 
-```sh
-cp build/context/context.md /tmp/rer-first.md
-cp build/context/manifest.json /tmp/rer-first.json
-./rer context --manifest examples/context.yaml --output build/context
-cmp /tmp/rer-first.md build/context/context.md
-cmp /tmp/rer-first.json build/context/manifest.json
-```
-
-Both `cmp` commands should exit successfully with no output.
-
-## Test on your project
-
-Build this tool once, then create `context.yaml` in the project you want to package. The project must already be a Git working tree; a commit is not required. Replace these file paths with files that exist in your project:
-
-```yaml
-version: 1
-byteBudget: 50000
-roots:
-  - name: app
-    path: .
-sources:
-  - root: app
-    path: src/exporter.ts
-  - root: app
-    path: tests/exporter.test.ts
-  - root: app
-    path: schema/export.json
-  - root: app
-    path: docs/export-design.md
-exclusions:
-  - root: app
-    path: .env
-  - root: app
-    path: node_modules
-```
-
-For a daily exporter change, explicitly select its implementation, tests, schema, and one design note. From that project's directory run:
-
-```sh
-/home/fedora/Documents/projects/repository-context-packer/rer context \
-  --manifest context.yaml --output build/context
-```
-
-Use the tool's actual checkout path if different. The launcher finds its JAR independently of the current directory. Root paths are relative to the **manifest's directory**; output paths are relative to the **calling directory**. Read `context.md`, inspect `manifest.json`, and add your output directory to your project's `.gitignore` if desired.
-
-Useful manual checks:
-
-- Reduce `byteBudget` to `1`: oversized files appear as `BUDGET_EXCEEDED`, and smaller files can still fit.
-- Select two files with identical bytes: the first logical `root/path` is canonical; the other has `DUPLICATE_CONTENT` and the canonical identity.
-- Select an ignored file: it has `GIT_IGNORED`. Set `allowIgnored: true` on that source alone to include it. An explicit exclusion still wins.
-- Change a selected file and rerun: its raw-byte hash changes.
-- Select `../outside.txt` or a symlink: the run fails and preserves the old package.
-
-## Manifest contract
-
-`version: 1`, a positive integer `byteBudget`, nonempty `roots`, and a `sources` list are required. An empty source list produces an empty complete package. `exclusions` defaults to an empty list; each source's `allowIgnored` defaults to `false`. Unknown fields, wrong scalar types, duplicate YAML keys, duplicate root names, duplicate normalized source identities, and unknown root references are rejected.
-
-Root names use letters, digits, `_`, `-`, and `.` and start with a letter, digit, `_`, or `-`. A root can be a subdirectory of a Git working tree; its declared location is canonicalized. Source and exclusion paths are relative, use `/`, and select exact paths or component-based exclusion subtrees. Backslashes are normalized to `/`. Absolute paths, `..` components, control characters, and empty normalized paths are rejected. Globs and directories as selected sources are unsupported. Every selected source must exist and be a readable regular file, including sources that will subsequently be excluded.
-
-A selected file with any symlink component below its canonical root is rejected. `.git` components, Git metadata, the output subtree, and explicit exclusions are always excluded before content capture. Resolved exclusion locations also apply across overlapping roots. `target` excludes `target/a`, while `targeted/a` remains eligible. Roots cannot be inside the output directory. Existing output ancestors cannot be symlinks, and output cannot be inside the declared roots' Git metadata.
-
-Git makes ignore decisions using the installed Git executable, index, nested rules, negations, repository excludes, and your configured global excludes. Tracked files remain eligible even if a pattern matches. Only the ignored source's own `allowIgnored: true` overrides Git ignore; it cannot override product exclusions. Ignored omissions and opted-in included sources record the matching rule. External rule-file paths are represented as `external/<basename>` to avoid publishing machine-specific absolute paths. Reproducibility assumes equivalent Git configuration as well as equivalent source inputs.
-
-## Output and budgeting
-
-Sources sort by logical `root/path`, independently of declaration order. Equal raw-byte SHA-256 hashes form one group: the first identity is canonical, and remaining identities are aliases. A canonical file is included whole if its raw bytes fit the remaining budget. Oversized files are omitted and allocation continues. Empty files cost zero bytes.
-
-Only unique raw source bytes count toward the budget. Markdown, JSON, aliases, and headings add output size beyond that budget. No truncation or token estimate is performed. Aliases cost zero and appear on included canonical entries. Every alias also has a `DUPLICATE_CONTENT` omission with its canonical identity, including when the canonical file exceeds the budget; follow that canonical's outcome to determine availability. Included canonical entries plus omission entries account for every selected source exactly once.
-
-Both artifacts use UTF-8 and LF, stable ordering, and no timestamps or absolute repository paths. JSON has `formatVersion: 1` and `status: COMPLETE`, totals, included sources, and omissions. Included entries contain raw byte size, SHA-256, encoding, line range, and aliases. Budget omissions contain original size, required bytes, and remaining bytes. Policy omissions do not read content and carry no content hash or size. Invalid UTF-8 is omitted as `UNSUPPORTED_ENCODING`.
-
-Raw bytes determine hashes and budgets; rendered text normalizes CRLF and lone CR to LF. An empty file has `L0-L0`. Other files have `L1-LN`, where a terminal newline adds no extra line. Markdown fences are longer than every backtick run in the captured content, and metadata is escaped.
-
-## Failures and publication
-
-| Exit code | Meaning |
-| --- | --- |
-| 0 | Complete package, possibly with ordinary omissions |
-| 2 | Invalid manifest or unsafe path |
-| 3 | Filesystem, Git, or output failure |
-| 4 | Source changed during capture |
-
-Ordinary omissions are `EXCLUDED`, `GIT_IGNORED`, `BUDGET_EXCEEDED`, `UNSUPPORTED_ENCODING`, and `DUPLICATE_CONTENT`. Errors identify the source where applicable; failed runs do not write partial artifacts.
-
-Capture compares size, modification time, and file identity before and after each read, then hashes the raw captured bytes. This detects observable mid-read changes. It does not provide a repository-wide atomic snapshot or complete protection against hostile filesystem races. Changes that restore all observed metadata can escape detection.
-
-Use a **dedicated output directory**. Replacement supports an absent directory, an empty directory, or a directory containing only regular `context.md` and/or `manifest.json` files. Unrelated entries are rejected. Both artifacts are rendered before publication, written into a sibling staging directory, then published by moving the old directory to a sibling backup and moving staging into place. A handled publication failure restores the backup, and owned temporary directories are cleaned up. If filesystem failure also prevents rollback, the backup is retained and its location is reported.
-
-A directory rename is requested atomically when supported, with a regular same-parent move as fallback. Replacing an existing package requires **two directory moves**: readers can briefly see an absent output directory. This is not an atomic pair of file moves, and there is no crash recovery or durability guarantee. After a process crash, inspect `.rer-stage-*` and `.rer-backup-*` siblings; a backup may contain the previous complete package. Use one writer per output directory. Filesystem errors during cleanup may require manual removal of those owned temporary paths. Network filesystem and non-Linux rename behavior are not verified by CI.
-
-Source contents are untrusted data: instructions inside them gain no authority from packaging. This utility does not automatically detect secrets. Review your explicit selections and output before sharing.
-
-## Development
-
-```sh
-mvn -q verify
-```
-
-The fixture suite uses real temporary Git repositories and controlled capture/publication failures. It checks validation, boundaries, Git behavior, deterministic capture, UTF-8, budgets, aliases, line references, rendering, rollback, and CLI behavior. Production targets Java 21; local development also works on newer JDKs.
-
-The original product and implementation specifications are preserved in [docs/project.md](docs/project.md) and [docs/project-guide.md](docs/project-guide.md). Retrieval, ranking, embeddings, AST parsing, globs, tokenizers, UI, and model integration are deferred.
+The original `rer context --manifest ... --output ...` command remains available. Its manual manifest workflow is optional and separate from the new commands. See the [legacy context packer guide](docs/legacy-context-packer.md), [original specification](docs/project.md), and [pivot research](docs/pivot-proposal.md).
