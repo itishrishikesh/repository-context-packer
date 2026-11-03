@@ -10,6 +10,18 @@ class PathPolicyTest {
   @TempDir Path temp;
 
   @Test
+  void fixturesCanonicalizePlatformTemporaryDirectoryAliases() throws Exception {
+    Path real = Files.createDirectory(temp.resolve("physical"));
+    Path alias = Files.createSymbolicLink(temp.resolve("platform-temp-alias"), real);
+    var fixture = new Fixture(alias);
+    fixture.file("a", "text");
+    fixture.select(100, "a");
+    var result = fixture.pack();
+    assertThat(result.exitCode()).as(result.message()).isZero();
+    assertThat(fixture.output.getParent()).isEqualTo(real.toRealPath());
+  }
+
+  @Test
   void rejectsFileAndAncestorSymlinksAndOutputSymlinks() throws Exception {
     var f = new Fixture(temp);
     f.file("real/a", "text");

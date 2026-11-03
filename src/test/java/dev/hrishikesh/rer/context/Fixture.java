@@ -10,6 +10,9 @@ public final class Fixture {
   public final Path repo, manifest, output;
 
   public Fixture(Path parent) throws Exception {
+    // macOS exposes its temporary directory through /var -> /private/var.
+    // Fixtures must use physical parents; production output validation still rejects symlinks.
+    parent = Files.createDirectories(parent).toRealPath();
     repo = Files.createDirectories(parent.resolve("repo"));
     manifest = parent.resolve("context.yaml");
     output = parent.resolve("out");

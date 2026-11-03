@@ -6,7 +6,7 @@ import picocli.CommandLine.Command;
 @Command(
     name = "rer",
     mixinStandardHelpOptions = true,
-    version = "rer 1.1.0",
+    version = "rer 1.1.1",
     description = "Local-first agent context regression checks for Claude Code and Codex.",
     subcommands = {
       dev.hrishikesh.rer.agent.AgentCommands.Inspect.class,

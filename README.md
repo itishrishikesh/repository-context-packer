@@ -26,7 +26,7 @@ rer --help
 To install a particular published version:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/itishrishikesh/repository-context-packer/main/scripts/install.sh | RER_VERSION=1.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/itishrishikesh/repository-context-packer/main/scripts/install.sh | RER_VERSION=1.1.1 sh
 ```
 
 Set `RER_INSTALL_DIR` and `RER_BIN_DIR` on `sh` to customize installation. Run the command again to install a newer release. Reinstalling the same version requires removing its existing version directory first; previous versions remain available until you remove them. For a manual install, download the matching release archive and `SHA256SUMS`, verify the archive, extract it, and run the extracted `rer` launcher. Keep its `runtime/` and `lib/` directories beside it.
@@ -152,7 +152,7 @@ sh scripts/package.sh
 
 Java integration tests use temporary real Git repositories and simulated Claude/Codex executables, without paid model calls. They cover the paired comparison path, external storage, checkout preservation, trace parsing, errors, timeouts, and configuration boundaries. Installer fixtures cover all four OS/architecture combinations and checksum rejection. Release builds run tests and smoke-test the bundled launcher on each target runner. Compatibility with future CLI trace schemas requires ongoing verification; raw traces are retained for diagnosis.
 
-To publish a release after changes are committed and pushed, tag the matching POM version and push the tag, for example `git tag v1.1.0` followed by `git push origin v1.1.0`. The release workflow tests and packages all four targets before publishing archives and `SHA256SUMS`. A manual workflow dispatch builds downloadable Actions artifacts without publishing a release.
+To publish a release after changes are committed and pushed, tag the matching POM version and push the tag, for example `git tag v1.1.1` followed by `git push origin v1.1.1`. The release workflow tests and packages all four targets before publishing archives and `SHA256SUMS`. A manual workflow dispatch builds downloadable Actions artifacts without publishing a release.
 
 ## Existing context export
 
